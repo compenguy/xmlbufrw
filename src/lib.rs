@@ -117,7 +117,7 @@ impl<R: Read> BufRead for XmlReadBuffer<R> {
         if self.output_pos >= self.output_buf.len() {
             debug_assert!(self.output_pos == self.output_buf.len());
             self.fill_input_buf()?;
-            // Raw utf-8 encoded data
+            // Take raw encoded data and convert it to utf-8
             let tmp_buf = self
                 .decoder
                 .decode(&self.input_buf, encoding::DecoderTrap::Strict)
@@ -136,12 +136,13 @@ impl<R: Read> BufRead for XmlReadBuffer<R> {
             // with a single LINE FEED, and they both start with CARRIAGE RETURN (0x0D), so we
             // always replace CR with LF, and if we see the second character of the two-character
             // sequence and we immediately saw a CR before them, it just gets omitted.
-            self.output_buf = tmp_buf.chars().filter_map(|x| {
-                match x {
+            self.output_buf = tmp_buf
+                .chars()
+                .filter_map(|x| match x {
                     '\u{000d}' => {
                         seen_cr = true;
                         Some('\u{000a}')
-                    },
+                    }
                     '\u{000a}' | '\u{0085}' => {
                         if seen_cr {
                             seen_cr = false;
@@ -149,17 +150,16 @@ impl<R: Read> BufRead for XmlReadBuffer<R> {
                         } else {
                             Some('\u{000a}')
                         }
-                    },
+                    }
                     '\u{2028}' => {
                         seen_cr = false;
                         Some('\u{000a}')
-                    },
+                    }
                     other => {
                         seen_cr = false;
                         Some(other)
-                    },
-                }
-            }).collect::<String>();
+                    }
+                }).collect::<String>();
             self.input_buf.clear();
             self.output_pos = 0;
         }
@@ -196,8 +196,8 @@ mod reader_tests {
 
     #[test]
     fn test_utf8() {
-        let utf8_str = std::str::from_utf8(include_bytes!("../tests/utf8/doc.xml"))
-            .expect("Unexpected error reading in utf-8 data");
+        // Validation docs have the same text as the test docs, but always in utf-8, no bom
+        let utf8_validation = include_bytes!("../tests/validation/doc_utf8.xml").to_vec();
         let utf8_bytes = include_bytes!("../tests/utf8/doc.xml").to_vec();
         let mut decoding_reader =
             XmlReadBuffer::new(&utf8_bytes as &[u8]).expect("Failed initializing XmlReadBuffer");
@@ -205,13 +205,13 @@ mod reader_tests {
         decoding_reader
             .read_to_string(&mut utf8_encoded_doc)
             .expect("Failed decoding input data");
-        assert_eq!(utf8_str, utf8_encoded_doc);
+        assert_eq!(&utf8_validation, &utf8_encoded_doc.as_bytes());
     }
 
     #[test]
     fn test_utf8_with_bom() {
-        let utf8_str = std::str::from_utf8(include_bytes!("../tests/utf8/doc.xml"))
-            .expect("Unexpected error reading in utf-8 data");
+        // Validation docs have the same text as the test docs, but always in utf-8, no bom
+        let utf8_validation = include_bytes!("../tests/validation/doc_utf8.xml").to_vec();
         let utf8_with_bom_bytes = include_bytes!("../tests/utf8_bom/doc.xml").to_vec();
         let mut decoding_reader = XmlReadBuffer::new(&utf8_with_bom_bytes as &[u8])
             .expect("Failed initializing XmlReadBuffer");
@@ -219,13 +219,13 @@ mod reader_tests {
         decoding_reader
             .read_to_string(&mut utf8_encoded_doc)
             .expect("Failed decoding input data");
-        assert_eq!(utf8_str, utf8_encoded_doc);
+        assert_eq!(&utf8_validation, &utf8_encoded_doc.as_bytes());
     }
 
     #[test]
     fn test_utf16le() {
-        let utf8_str = std::str::from_utf8(include_bytes!("../tests/utf8/doc.xml"))
-            .expect("Unexpected error reading in utf-8 data");
+        // Validation docs have the same text as the test docs, but always in utf-8, no bom
+        let utf16_validation = include_bytes!("../tests/validation/doc_utf16le.xml").to_vec();
         let utf16_bytes = include_bytes!("../tests/utf16le/doc.xml").to_vec();
 
         let mut decoding_reader =
@@ -234,13 +234,13 @@ mod reader_tests {
         decoding_reader
             .read_to_string(&mut utf8_encoded_doc)
             .expect("Failed reading recoded data");
-        assert_eq!(utf8_str, utf8_encoded_doc);
+        assert_eq!(&utf16_validation, &utf8_encoded_doc.as_bytes());
     }
 
     #[test]
     fn test_utf16le_with_bom() {
-        let utf8_str = std::str::from_utf8(include_bytes!("../tests/utf8/doc.xml"))
-            .expect("Unexpected error reading in utf-8 data");
+        // Validation docs have the same text as the test docs, but always in utf-8, no bom
+        let utf16_validation = include_bytes!("../tests/validation/doc_utf16le.xml").to_vec();
         let utf16_with_bom_bytes = include_bytes!("../tests/utf16le_bom/doc.xml").to_vec();
 
         let mut decoding_reader = XmlReadBuffer::new(&utf16_with_bom_bytes as &[u8])
@@ -249,13 +249,13 @@ mod reader_tests {
         decoding_reader
             .read_to_string(&mut utf8_encoded_doc)
             .expect("Failed reading recoded data");
-        assert_eq!(utf8_str, utf8_encoded_doc);
+        assert_eq!(&utf16_validation, &utf8_encoded_doc.as_bytes());
     }
 
     #[test]
     fn test_utf16be() {
-        let utf8_str = std::str::from_utf8(include_bytes!("../tests/utf8/doc.xml"))
-            .expect("Unexpected error reading in utf-8 data");
+        // Validation docs have the same text as the test docs, but always in utf-8, no bom
+        let utf16_validation = include_bytes!("../tests/validation/doc_utf16be.xml").to_vec();
         let utf16_bytes = include_bytes!("../tests/utf16be/doc.xml").to_vec();
 
         let mut decoding_reader =
@@ -264,13 +264,13 @@ mod reader_tests {
         decoding_reader
             .read_to_string(&mut utf8_encoded_doc)
             .expect("Failed reading recoded data");
-        assert_eq!(utf8_str, utf8_encoded_doc);
+        assert_eq!(&utf16_validation, &utf8_encoded_doc.as_bytes());
     }
 
     #[test]
     fn test_utf16be_with_bom() {
-        let utf8_str = std::str::from_utf8(include_bytes!("../tests/utf8/doc.xml"))
-            .expect("Unexpected error reading in utf-8 data");
+        // Validation docs have the same text as the test docs, but always in utf-8, no bom
+        let utf16_validation = include_bytes!("../tests/validation/doc_utf16be.xml").to_vec();
         let utf16_with_bom_bytes = include_bytes!("../tests/utf16be_bom/doc.xml").to_vec();
 
         let mut decoding_reader = XmlReadBuffer::new(&utf16_with_bom_bytes as &[u8])
@@ -279,6 +279,6 @@ mod reader_tests {
         decoding_reader
             .read_to_string(&mut utf8_encoded_doc)
             .expect("Failed reading recoded data");
-        assert_eq!(utf8_str, utf8_encoded_doc);
+        assert_eq!(&utf16_validation, &utf8_encoded_doc.as_bytes());
     }
 }

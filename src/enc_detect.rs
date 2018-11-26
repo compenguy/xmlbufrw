@@ -15,14 +15,15 @@ pub fn detect_encoding_with_suggestion<R: Read>(
     let mut quad = [0; 4];
     reader.take(quad.len() as u64).read_exact(&mut quad)?;
 
-    let encoding_guess = Encoding::new_from_buffer(&quad[0..4])?;
+    let (encoding_guess, bom_bytes) = Encoding::new_from_buffer(&quad[0..4])?;
     // Add all bytes after the bom (if present) to the prebuf
-    prebuf.extend(&quad[encoding_guess.get_bom_len()..]);
+    prebuf.extend(&quad[bom_bytes..]);
 
     // Buffer for reading a-char-at-a-time until we have enough to see if there's an xmldecl
     // checking for "<?xml" followed by a whitespace char, so we need to fetch six chars, minus
     // however many chars are already in prebuf
-    let mut tmp_buf: Vec<u8> = vec![0; (6 - prebuf.len()) * encoding_guess.get_char_width()];
+    let char_width = encoding_guess.get_char_width();
+    let mut tmp_buf: Vec<u8> = vec![0; (6 * char_width) - prebuf.len()];
     reader.take(tmp_buf.len() as u64).read_exact(&mut tmp_buf)?;
     prebuf.extend(&tmp_buf);
 
@@ -39,8 +40,7 @@ pub fn detect_encoding_with_suggestion<R: Read>(
 
     let has_xml_decl = xml_decl.starts_with("<?xml") && xml_decl
         .chars()
-        .take(4)
-        .next()
+        .nth(5)
         .map(char::is_whitespace)
         .unwrap_or(false);
     if !has_xml_decl {
@@ -66,15 +66,15 @@ pub fn detect_encoding_with_suggestion<R: Read>(
         reader
             .take(one_char_buf.len() as u64)
             .read_exact(&mut one_char_buf)?;
+        prebuf.extend(&one_char_buf);
         let next_char = temp_decoder
-            .decode(&prebuf, encoding::DecoderTrap::Strict)
+            .decode(&one_char_buf, encoding::DecoderTrap::Strict)
             .map_err(|desc| {
                 io::Error::new(
                     io::ErrorKind::Other,
                     format!("Input decoding error: {}", desc),
                 )
             })?;
-        prebuf.extend(&one_char_buf);
         xml_decl.push_str(&next_char);
         // we don't have a full state machine here to detect if we're running through valid
         // xml_decl data, so we're just going to put a hard upper cap at 256 chars - if we've
@@ -99,17 +99,30 @@ pub fn detect_encoding_with_suggestion<R: Read>(
 
     if let Some(encoding_val) = encoding_tokens.next() {
         // if definitive and xmldecl, error if encodingdecl doesn't match detected encoding
+        // get value between the quotes
+        let mut encoding_val_iter = encoding_val.chars();
+        let starting_quote = encoding_val_iter.next().ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::Other,
+                "Improperly formatted encodingdecl: unquoted value.",
+            )
+        })?;
+        let encoding_name = encoding_val_iter
+            .take_while(|c| c != &starting_quote)
+            .collect::<String>();
+
         if encoding_guess.is_definitive() {
-            if !encoding_guess.encoding_decl_is_compatible(encoding_val)? {
+            if !encoding_guess.encoding_decl_is_compatible(&encoding_name)? {
                 return Err(io::Error::new(
                     io::ErrorKind::Other,
                     format!(
                         "Detected input encoding {} is incompatible with declared encoding {}",
                         encoding_guess.get_name(),
-                        encoding_val
+                        encoding_name
                     ),
                 ));
             }
+            return Ok((encoding_guess, prebuf));
         } else {
             // if not definitive, and xmldecl, return xmldecl encoding
             return Ok((encoding_guess, prebuf));
@@ -135,48 +148,52 @@ pub enum Encoding {
 }
 
 impl Encoding {
-    pub fn new_from_buffer(buf: &[u8]) -> io::Result<Self> {
+    pub fn new_from_buffer(buf: &[u8]) -> io::Result<(Self, usize)> {
         match buf[0..4] {
             // Byte Order Mark test
             // UTF-8
-            [0xEF, 0xBB, 0xBF, _po4] => Self::new_from_name("utf-8", true),
+            [0xEF, 0xBB, 0xBF, _] => Ok((Self::new_from_name("utf-8", true)?, 3)),
             // UTF-16, little-endian
-            [0xFF, 0xFE, _po3, _po4] => Self::new_from_name("utf-16le", true),
+            [0xFF, 0xFE, _po3, _po4] if _po3 != 0x00 && _po4 == 0x00 => {
+                Ok((Self::new_from_name("utf-16le", true)?, 2))
+            }
             // UTF-16, big-endian
-            [0xFE, 0xFF, _po3, _po4] => Self::new_from_name("utf-16be", true),
+            [0xFE, 0xFF, _po3, _po4] if _po3 == 0x00 && _po4 != 0x00 => {
+                Ok((Self::new_from_name("utf-16be", true)?, 2))
+            }
             /*
             // UCS-4, little endian (4321 order)
-            [0xFF, 0xFE, 0x00, 0x00] => Self::new_from_name("utf-32le", true),
+            [0xFF, 0xFE, 0x00, 0x00] => Ok((Self::new_from_name("utf-32le", true)?, 4)),
             // UCS-4, big endian (1234 order)
-            [0x00, 0x00, 0xFE, 0xFF] => Self::new_from_name("utf-32be", true),
+            [0x00, 0x00, 0xFE, 0xFF] => Ok((Self::new_from_name("utf-32be", true)?, 4)),
             // UCS-4, unusual octet order (2143 order)
             [0x00, 0x00, 0xFF, 0xFE] => Err(io::Error::new(io::ErrorKind::Other, "Unsupported file encoding, \"UCS-4 unusual octet order (2143 order)\"")),
             // UCS-4, little endian (3412 order)
             [0xFE, 0xFF, 0x00, 0x00] => Err(io::Error::new(io::ErrorKind::Other, "Unsupported file encoding, \"UCS-4 unusual octet order (3412 order)\"")),
             // UTF-EBCDIC
-            [0xDD, 0x73, 0x66, 0x73] => Self::new_from_name("utf-ebcdic", true),
+            [0xDD, 0x73, 0x66, 0x73] => Ok((Self::new_from_name("utf-ebcdic", true)?, 4)),
             */
 
             // xmldecl char-width/endianness test
             // UTF-8, ISO 646, ASCII, ISO 8859, etc '<?xm'
             // encodingDecl required
-            [0x3C, 0x3F, 0x78, 0x6D] => Self::new_from_name("utf-8", false),
+            [0x3C, 0x3F, 0x78, 0x6D] => Ok((Self::new_from_name("utf-8", false)?, 0)),
             // UTF-16, little-endian '<?'
-            [0x3C, 0x00, 0x3F, 0x00] => Self::new_from_name("utf-16be", true),
+            [0x3C, 0x00, 0x3F, 0x00] => Ok((Self::new_from_name("utf-16le", true)?, 0)),
             // UTF-16, big-endian '<?'
-            [0x00, 0x3C, 0x00, 0x3F] => Self::new_from_name("utf-16be", true),
+            [0x00, 0x3C, 0x00, 0x3F] => Ok((Self::new_from_name("utf-16be", true)?, 0)),
             /*
             // UCS-4, little endian (4321 order) '<'
-            [0x3C, 0x00, 0x00, 0x00] => Self::new_from_name("utf-32le", true),
+            [0x3C, 0x00, 0x00, 0x00] => Ok((Self::new_from_name("utf-32le", true)?, 0)),
             // UCS-4, big endian (1234 order) '<'
-            [0x00, 0x00, 0x00, 0x3C] => Self::new_from_name("utf-32be", true),
+            [0x00, 0x00, 0x00, 0x3C] => Ok((Self::new_from_name("utf-32be", true)?, 0)),
             // UCS-4, unusual octet order (2143 order) '<'
             [0x00, 0x00, 0x3C, 0x00] => Err(io::Error::new(io::ErrorKind::Other, "Unsupported file encoding, \"UCS-4 unusual octet order (2143 order)\"")),
             // UCS-4, little endian (3412 order) '<'
             [0x00, 0x3C, 0x00, 0x00] => Err(io::Error::new(io::ErrorKind::Other, "Unsupported file encoding, \"UCS-4 unusual octet order (3412 order)\"")),
             // Some flavor of EBCDIC '<?xm'
             // encodingDecl required
-            [0x4C, 0x6F, 0xA7, 0x94] => Self::new_from_name("ebcdic-cp-us", false),
+            [0x4C, 0x6F, 0xA7, 0x94] => Ok((Self::new_from_name("ebcdic-cp-us", false)?, 0)),
             */
 
             // Any remaining multibyte encodings are unsupported
@@ -188,7 +205,7 @@ impl Encoding {
             }
             // No BOM, document doesn't immediately start with xml declaration, but it appears to
             // be a single-byte encoding, so we'll assume utf-8 and hope for the best
-            _ => Self::new_from_name("utf-8", false),
+            _ => Ok((Self::new_from_name("utf-8", false)?, 0)),
         }
     }
 
@@ -247,21 +264,6 @@ impl Encoding {
             Encoding::Utf32Be(_) => 4,
             Encoding::UtfEbcdic(_) => 1,
             Encoding::EbcdicCpUs(_) => 1,
-            */
-        }
-    }
-
-    pub fn get_bom_len(&self) -> usize {
-        match self {
-            Encoding::Ascii(_) => 0,
-            Encoding::Utf8(_) => 3,
-            Encoding::Utf16Le(_) => 2,
-            Encoding::Utf16Be(_) => 2,
-            /*
-            Encoding::Utf32Le(_) => 4,
-            Encoding::Utf32Be(_) => 4,
-            Encoding::UtfEbcdic(_) => 4,
-            Encoding::EbcdicCpUs(_) => 0,
             */
         }
     }
