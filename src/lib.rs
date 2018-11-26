@@ -117,7 +117,8 @@ impl<R: Read> BufRead for XmlReadBuffer<R> {
         if self.output_pos >= self.output_buf.len() {
             debug_assert!(self.output_pos == self.output_buf.len());
             self.fill_input_buf()?;
-            self.output_buf = self
+            // Raw utf-8 encoded data
+            let tmp_buf = self
                 .decoder
                 .decode(&self.input_buf, encoding::DecoderTrap::Strict)
                 .map_err(|desc| {
@@ -126,6 +127,31 @@ impl<R: Read> BufRead for XmlReadBuffer<R> {
                         format!("Input decoding error: {}", desc),
                     )
                 })?;
+            let mut seen_cr = false;
+            self.output_buf = tmp_buf.chars().filter_map(|x| {
+                match x {
+                    '\u{000d}' => {
+                        seen_cr = true;
+                        Some('\u{000a}')
+                    },
+                    '\u{000a}' | '\u{0085}' => {
+                        if seen_cr {
+                            seen_cr = false;
+                            None
+                        } else {
+                            Some('\u{000a}')
+                        }
+                    },
+                    '\u{2028}' => {
+                        seen_cr = false;
+                        Some('\u{000a}')
+                    },
+                    other => {
+                        seen_cr = false;
+                        Some(other)
+                    },
+                }
+            }).collect::<String>();
             self.input_buf.clear();
             self.output_pos = 0;
         }
