@@ -128,6 +128,14 @@ impl<R: Read> BufRead for XmlReadBuffer<R> {
                     )
                 })?;
             let mut seen_cr = false;
+            // We do the more comprehensive xml 1.1 end-of-line handling rather than the sparser
+            // xml 1.0 end-of-line, since it should be effective for both situations.
+            // https://www.w3.org/TR/2006/REC-xml11-20060816/#sec-line-ends
+            // The short version is that there's a list of characters we want to convert to LINE
+            // FEED (0x0A), but there are some two-character sequences that need to be replaced
+            // with a single LINE FEED, and they both start with CARRIAGE RETURN (0x0D), so we
+            // always replace CR with LF, and if we see the second character of the two-character
+            // sequence and we immediately saw a CR before them, it just gets omitted.
             self.output_buf = tmp_buf.chars().filter_map(|x| {
                 match x {
                     '\u{000d}' => {
