@@ -200,7 +200,7 @@ impl Encoding {
             [0x00, _, _, _] | [_, 0x00, _, _] | [_, _, 0x00, _] | [_, _, _, 0x00] => {
                 Err(io::Error::new(
                     io::ErrorKind::Other,
-                    "Unsupported multi-byte file encoding.",
+                    "Missing BOM and no xml declaration, or Unsupported multi-byte file encoding.",
                 ))
             }
             // No BOM, document doesn't immediately start with xml declaration, but it appears to
