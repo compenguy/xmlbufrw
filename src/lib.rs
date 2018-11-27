@@ -136,6 +136,8 @@ impl<R: Read> BufRead for XmlReadBuffer<R> {
             // with a single LINE FEED, and they both start with CARRIAGE RETURN (0x0D), so we
             // always replace CR with LF, and if we see the second character of the two-character
             // sequence and we immediately saw a CR before them, it just gets omitted.
+            // TODO: Eliminate an extra copy by moving the end-of-line normalization into the
+            // "Read::read()" impl
             self.output_buf = tmp_buf
                 .chars()
                 .filter_map(|x| match x {
