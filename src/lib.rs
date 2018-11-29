@@ -210,7 +210,7 @@ mod reader_tests {
                     .read_to_string(&mut utf8_encoded_doc)
                     .expect("Failed decoding input data");
                 assert_eq!(&utf8_validation, &utf8_encoded_doc.as_bytes());
-            },
+            }
             Err(e) => panic!("Failed initializing XmlReadBuffer: {}", e),
         }
     }
@@ -229,7 +229,7 @@ mod reader_tests {
                     .read_to_string(&mut utf8_encoded_doc)
                     .expect("Failed decoding input data");
                 assert_eq!(&utf8_validation, &utf8_encoded_doc.as_bytes());
-            },
+            }
             Err(e) => panic!("Failed initializing XmlReadBuffer: {}", e),
         }
     }
@@ -238,7 +238,8 @@ mod reader_tests {
     fn test_utf8_xmldecl_encodingdecl() {
         // Test with xmldecl, encodingdecl
         // Validation docs have the same text as the test docs, but always in utf-8, no bom
-        let utf8_validation = include_bytes!("../tests/validation/utf8_xmldecl_encodingdecl.xml").to_vec();
+        let utf8_validation =
+            include_bytes!("../tests/validation/utf8_xmldecl_encodingdecl.xml").to_vec();
 
         let utf8_bytes = include_bytes!("../tests/utf8/doc_xmldecl_encodingdecl.xml").to_vec();
         match XmlReadBuffer::new(&utf8_bytes as &[u8]) {
@@ -248,7 +249,7 @@ mod reader_tests {
                     .read_to_string(&mut utf8_encoded_doc)
                     .expect("Failed decoding input data");
                 assert_eq!(&utf8_validation, &utf8_encoded_doc.as_bytes());
-            },
+            }
             Err(e) => panic!("Failed initializing XmlReadBuffer: {}", e),
         }
     }
@@ -267,7 +268,7 @@ mod reader_tests {
                     .read_to_string(&mut utf8_encoded_doc)
                     .expect("Failed decoding input data");
                 assert_eq!(&utf8_validation, &utf8_encoded_doc.as_bytes());
-            },
+            }
             Err(e) => panic!("Failed initializing XmlReadBuffer: {}", e),
         }
     }
@@ -286,7 +287,7 @@ mod reader_tests {
                     .read_to_string(&mut utf8_encoded_doc)
                     .expect("Failed decoding input data");
                 assert_eq!(&utf8_validation, &utf8_encoded_doc.as_bytes());
-            },
+            }
             Err(e) => panic!("Failed initializing XmlReadBuffer: {}", e),
         }
     }
@@ -295,9 +296,11 @@ mod reader_tests {
     fn test_utf8_with_bom_xmldecl_encodingdecl() {
         // Test with xmldecl, encodingdecl
         // Validation docs have the same text as the test docs, but always in utf-8, no bom
-        let utf8_validation = include_bytes!("../tests/validation/utf8_xmldecl_encodingdecl.xml").to_vec();
+        let utf8_validation =
+            include_bytes!("../tests/validation/utf8_xmldecl_encodingdecl.xml").to_vec();
 
-        let utf8_with_bom_bytes = include_bytes!("../tests/utf8_bom/doc_xmldecl_encodingdecl.xml").to_vec();
+        let utf8_with_bom_bytes =
+            include_bytes!("../tests/utf8_bom/doc_xmldecl_encodingdecl.xml").to_vec();
         match XmlReadBuffer::new(&utf8_with_bom_bytes as &[u8]) {
             Ok(mut decoding_reader) => {
                 let mut utf8_encoded_doc: String = String::new();
@@ -305,7 +308,7 @@ mod reader_tests {
                     .read_to_string(&mut utf8_encoded_doc)
                     .expect("Failed decoding input data");
                 assert_eq!(&utf8_validation, &utf8_encoded_doc.as_bytes());
-            },
+            }
             Err(e) => panic!("Failed initializing XmlReadBuffer: {}", e),
         }
     }
@@ -333,7 +336,7 @@ mod reader_tests {
                     .read_to_string(&mut utf8_encoded_doc)
                     .expect("Failed decoding input data");
                 assert_eq!(&utf16_validation, &utf8_encoded_doc.as_bytes());
-            },
+            }
             Err(e) => panic!("Failed initializing XmlReadBuffer: {}", e),
         }
     }
@@ -342,7 +345,8 @@ mod reader_tests {
     fn test_utf16le_xmldecl_encodingdecl() {
         // Test with xmldecl, encodingdecl
         // Validation docs have the same text as the test docs, but always in utf-8, no bom
-        let utf16_validation = include_bytes!("../tests/validation/utf16le_xmldecl_encodingdecl.xml").to_vec();
+        let utf16_validation =
+            include_bytes!("../tests/validation/utf16le_xmldecl_encodingdecl.xml").to_vec();
 
         let utf16_bytes = include_bytes!("../tests/utf16le/doc_xmldecl_encodingdecl.xml").to_vec();
         match XmlReadBuffer::new(&utf16_bytes as &[u8]) {
@@ -352,7 +356,7 @@ mod reader_tests {
                     .read_to_string(&mut utf8_encoded_doc)
                     .expect("Failed decoding input data");
                 assert_eq!(&utf16_validation, &utf8_encoded_doc.as_bytes());
-            },
+            }
             Err(e) => panic!("Failed initializing XmlReadBuffer: {}", e),
         }
     }
@@ -371,7 +375,7 @@ mod reader_tests {
                     .read_to_string(&mut utf8_encoded_doc)
                     .expect("Failed decoding input data");
                 assert_eq!(&utf16_validation, &utf8_encoded_doc.as_bytes());
-            },
+            }
             Err(e) => panic!("Failed initializing XmlReadBuffer: {}", e),
         }
     }
@@ -390,7 +394,7 @@ mod reader_tests {
                     .read_to_string(&mut utf8_encoded_doc)
                     .expect("Failed decoding input data");
                 assert_eq!(&utf16_validation, &utf8_encoded_doc.as_bytes());
-            },
+            }
             Err(e) => panic!("Failed initializing XmlReadBuffer: {}", e),
         }
     }
@@ -399,9 +403,11 @@ mod reader_tests {
     fn test_utf16le_with_bom_xmldecl_encodingdecl() {
         // Test with xmldecl, encodingdecl
         // Validation docs have the same text as the test docs, but always in utf-8, no bom
-        let utf16_validation = include_bytes!("../tests/validation/utf16le_xmldecl_encodingdecl.xml").to_vec();
+        let utf16_validation =
+            include_bytes!("../tests/validation/utf16le_xmldecl_encodingdecl.xml").to_vec();
 
-        let utf16_with_bom_bytes = include_bytes!("../tests/utf16le_bom/doc_xmldecl_encodingdecl.xml").to_vec();
+        let utf16_with_bom_bytes =
+            include_bytes!("../tests/utf16le_bom/doc_xmldecl_encodingdecl.xml").to_vec();
         match XmlReadBuffer::new(&utf16_with_bom_bytes as &[u8]) {
             Ok(mut decoding_reader) => {
                 let mut utf8_encoded_doc: String = String::new();
@@ -409,7 +415,7 @@ mod reader_tests {
                     .read_to_string(&mut utf8_encoded_doc)
                     .expect("Failed decoding input data");
                 assert_eq!(&utf16_validation, &utf8_encoded_doc.as_bytes());
-            },
+            }
             Err(e) => panic!("Failed initializing XmlReadBuffer: {}", e),
         }
     }
@@ -437,7 +443,7 @@ mod reader_tests {
                     .read_to_string(&mut utf8_encoded_doc)
                     .expect("Failed decoding input data");
                 assert_eq!(&utf16_validation, &utf8_encoded_doc.as_bytes());
-            },
+            }
             Err(e) => panic!("Failed initializing XmlReadBuffer: {}", e),
         }
     }
@@ -446,7 +452,8 @@ mod reader_tests {
     fn test_utf16be_xmldecl_encodingdecl() {
         // Test with xmldecl, encodingdecl
         // Validation docs have the same text as the test docs, but always in utf-8, no bom
-        let utf16_validation = include_bytes!("../tests/validation/utf16be_xmldecl_encodingdecl.xml").to_vec();
+        let utf16_validation =
+            include_bytes!("../tests/validation/utf16be_xmldecl_encodingdecl.xml").to_vec();
 
         let utf16_bytes = include_bytes!("../tests/utf16be/doc_xmldecl_encodingdecl.xml").to_vec();
         match XmlReadBuffer::new(&utf16_bytes as &[u8]) {
@@ -456,7 +463,7 @@ mod reader_tests {
                     .read_to_string(&mut utf8_encoded_doc)
                     .expect("Failed decoding input data");
                 assert_eq!(&utf16_validation, &utf8_encoded_doc.as_bytes());
-            },
+            }
             Err(e) => panic!("Failed initializing XmlReadBuffer: {}", e),
         }
     }
@@ -475,7 +482,7 @@ mod reader_tests {
                     .read_to_string(&mut utf8_encoded_doc)
                     .expect("Failed decoding input data");
                 assert_eq!(&utf16_validation, &utf8_encoded_doc.as_bytes());
-            },
+            }
             Err(e) => panic!("Failed initializing XmlReadBuffer: {}", e),
         }
     }
@@ -494,7 +501,7 @@ mod reader_tests {
                     .read_to_string(&mut utf8_encoded_doc)
                     .expect("Failed decoding input data");
                 assert_eq!(&utf16_validation, &utf8_encoded_doc.as_bytes());
-            },
+            }
             Err(e) => panic!("Failed initializing XmlReadBuffer: {}", e),
         }
     }
@@ -503,9 +510,11 @@ mod reader_tests {
     fn test_utf16be_with_bom_xmldecl_encodingdecl() {
         // Test with xmldecl, encodingdecl
         // Validation docs have the same text as the test docs, but always in utf-8, no bom
-        let utf16_validation = include_bytes!("../tests/validation/utf16be_xmldecl_encodingdecl.xml").to_vec();
+        let utf16_validation =
+            include_bytes!("../tests/validation/utf16be_xmldecl_encodingdecl.xml").to_vec();
 
-        let utf16_with_bom_bytes = include_bytes!("../tests/utf16be_bom/doc_xmldecl_encodingdecl.xml").to_vec();
+        let utf16_with_bom_bytes =
+            include_bytes!("../tests/utf16be_bom/doc_xmldecl_encodingdecl.xml").to_vec();
         match XmlReadBuffer::new(&utf16_with_bom_bytes as &[u8]) {
             Ok(mut decoding_reader) => {
                 let mut utf8_encoded_doc: String = String::new();
@@ -513,7 +522,7 @@ mod reader_tests {
                     .read_to_string(&mut utf8_encoded_doc)
                     .expect("Failed decoding input data");
                 assert_eq!(&utf16_validation, &utf8_encoded_doc.as_bytes());
-            },
+            }
             Err(e) => panic!("Failed initializing XmlReadBuffer: {}", e),
         }
     }
