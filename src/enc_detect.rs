@@ -19,16 +19,49 @@ pub fn detect_encoding_with_suggestion<R: Read>(
     // Add all bytes after the bom (if present) to the prebuf
     prebuf.extend(&quad[bom_bytes..]);
 
-    // Buffer for reading a-char-at-a-time until we have enough to see if there's an xmldecl
-    // checking for "<?xml" followed by a whitespace char, so we need to fetch six chars, minus
-    // however many chars are already in prebuf
+    // Extend the prebuf with enough chars to have gotten the xmldecl prefix
+    let xml_decl_prefix = "<?xml ";
     let char_width = encoding_guess.get_char_width();
-    let mut tmp_buf: Vec<u8> = vec![0; (6 * char_width) - prebuf.len()];
+    let xml_decl_prefix_width = xml_decl_prefix.len() * char_width;
+    // Buffer for reading a-char-at-a-time until we have enough to see if there's an xmldecl
+    let mut tmp_buf: Vec<u8> = vec![0; xml_decl_prefix_width - prebuf.len()];
     reader.take(tmp_buf.len() as u64).read_exact(&mut tmp_buf)?;
     prebuf.extend(&tmp_buf);
 
     let temp_decoder = encoding_guess.get_decoder()?;
 
+    // Because we don't yet *know* that we're inside an xmldecl, and outside of an xmldecl a
+    // display char may consist of more than one utf char, we're going to decode this one step
+    // at a time.
+    // make an iterator over chunks of char_width size, decode it
+    let has_xml_decl: bool = prebuf
+        .chunks(char_width)
+        .map(|x| temp_decoder.decode(x, encoding::DecoderTrap::Strict))
+        .zip(xml_decl_prefix.chars())
+        .all(|(input_char_str_result, decl_char)| {
+            if let Ok(input_char_str) = input_char_str_result {
+                (char::is_whitespace(decl_char) && input_char_str.chars().all(char::is_whitespace))
+                    || (decl_char.to_string() == input_char_str)
+            } else {
+                false
+            }
+        });
+
+    // How to resolve suggested encoding with document inferences:
+    // https://www.w3.org/TR/xml/#sec-guessing-with-ext-info
+    if !has_xml_decl {
+        // If there's no xmldecl, but there is a BOM, rely on that
+        if encoding_guess.is_definitive() {
+            return Ok((encoding_guess, prebuf));
+        } else if let Some(encoding_name) = suggested_encoding {
+            // If there's no xmldecl, and no BOM, fall back on the suggested encoding
+            let encoding = Encoding::new_from_name(&encoding_name, true)?;
+            return Ok((encoding, prebuf));
+        } else {
+            // if no xmldecl, no BOM, and no suggested encoding then error
+            return Err(io::Error::new(io::ErrorKind::Other, "Unable to detect input file encoding.  No Byte Order Mark, and no xml declaration."));
+        }
+    }
     let mut xml_decl = temp_decoder
         .decode(&prebuf, encoding::DecoderTrap::Strict)
         .map_err(|desc| {
@@ -37,28 +70,6 @@ pub fn detect_encoding_with_suggestion<R: Read>(
                 format!("Input decoding error: {}", desc),
             )
         })?;
-
-    let has_xml_decl = xml_decl.starts_with("<?xml") && xml_decl
-        .chars()
-        .nth(5)
-        .map(char::is_whitespace)
-        .unwrap_or(false);
-    if !has_xml_decl {
-        // If there's no xmldecl, suggestion takes priority
-        // https://www.w3.org/TR/xml/#sec-guessing-with-ext-info
-        if let Some(encoding_name) = suggested_encoding {
-            let encoding = Encoding::new_from_name(&encoding_name, true)?;
-            return Ok((encoding, prebuf));
-        }
-        // if no xmldecl, not definitive, and no suggested encoding then error
-        if !encoding_guess.is_definitive() {
-            return Err(io::Error::new(io::ErrorKind::Other, "Unable to detect input file encoding.  No Byte Order Mark, and no xml declaration."));
-        }
-        // if no xmldecl, the encoding detection was definitive, and no suggested encoding, return now
-        if encoding_guess.is_definitive() {
-            return Ok((encoding_guess, prebuf));
-        }
-    }
 
     // Now we have to read through until we get to the end of the xmldecl - "?>"
     let mut one_char_buf: Vec<u8> = vec![0; encoding_guess.get_char_width()];
@@ -98,8 +109,6 @@ pub fn detect_encoding_with_suggestion<R: Read>(
     }
 
     if let Some(encoding_val) = encoding_tokens.next() {
-        // if definitive and xmldecl, error if encodingdecl doesn't match detected encoding
-        // get value between the quotes
         let mut encoding_val_iter = encoding_val.chars();
         let starting_quote = encoding_val_iter.next().ok_or_else(|| {
             io::Error::new(
@@ -111,6 +120,8 @@ pub fn detect_encoding_with_suggestion<R: Read>(
             .take_while(|c| c != &starting_quote)
             .collect::<String>();
 
+        // if definitive and xmldecl, error if encodingdecl doesn't match detected encoding
+        // get value between the quotes
         if encoding_guess.is_definitive() {
             if !encoding_guess.encoding_decl_is_compatible(&encoding_name)? {
                 return Err(io::Error::new(
@@ -129,7 +140,11 @@ pub fn detect_encoding_with_suggestion<R: Read>(
         }
     }
 
-    Ok((Encoding::new_from_name("utf-8", false)?, prebuf))
+    if let Some(encoding_name) = suggested_encoding {
+        Ok((Encoding::new_from_name(&encoding_name, false)?, prebuf))
+    } else {
+        Ok((Encoding::new_from_name("utf-8", false)?, prebuf))
+    }
 }
 
 pub enum Encoding {
