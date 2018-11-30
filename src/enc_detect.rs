@@ -1,8 +1,22 @@
 use std::io;
 use std::io::Read;
 
-use encoding;
-use encoding::types::EncodingRef;
+use encoding_rs;
+
+pub fn decoder_helper(decoder: &mut encoding_rs::Decoder, input: &[u8]) -> io::Result<String> {
+    let mut decoded = String::with_capacity(input.len() * 4);
+
+    let (result, bytes_read) =
+        decoder.decode_to_string_without_replacement(&input, &mut decoded, false);
+    if let encoding_rs::DecoderResult::Malformed(_, _) = result {
+        Err(io::Error::new(
+            io::ErrorKind::Other,
+            format!("Malformed input. {:x?}, position {}.", input, bytes_read),
+        ))
+    } else {
+        Ok(decoded)
+    }
+}
 
 // Implements the encoding detection heuristic suggested by
 // https://www.w3.org/TR/xml/#sec-guessing
@@ -28,7 +42,7 @@ pub fn detect_encoding_with_suggestion<R: Read>(
     reader.take(tmp_buf.len() as u64).read_exact(&mut tmp_buf)?;
     prebuf.extend(&tmp_buf);
 
-    let temp_decoder = encoding_guess.get_decoder()?;
+    let mut temp_decoder = encoding_guess.get_decoder()?;
 
     // Because we don't yet *know* that we're inside an xmldecl, and outside of an xmldecl a
     // display char may consist of more than one utf char, we're going to decode this one step
@@ -36,7 +50,7 @@ pub fn detect_encoding_with_suggestion<R: Read>(
     // make an iterator over chunks of char_width size, decode it
     let has_xml_decl: bool = prebuf
         .chunks(char_width)
-        .map(|x| temp_decoder.decode(x, encoding::DecoderTrap::Strict))
+        .map(|x| decoder_helper(&mut temp_decoder, x))
         .zip(xml_decl_prefix.chars())
         .all(|(input_char_str_result, decl_char)| {
             if let Ok(input_char_str) = input_char_str_result {
@@ -62,14 +76,7 @@ pub fn detect_encoding_with_suggestion<R: Read>(
             return Err(io::Error::new(io::ErrorKind::Other, "Unable to detect input file encoding.  No Byte Order Mark, and no xml declaration."));
         }
     }
-    let mut xml_decl = temp_decoder
-        .decode(&prebuf, encoding::DecoderTrap::Strict)
-        .map_err(|desc| {
-            io::Error::new(
-                io::ErrorKind::Other,
-                format!("Input decoding error: {}", desc),
-            )
-        })?;
+    let mut xml_decl = decoder_helper(&mut temp_decoder, &prebuf)?;
 
     // Now we have to read through until we get to the end of the xmldecl - "?>"
     let mut one_char_buf: Vec<u8> = vec![0; encoding_guess.get_char_width()];
@@ -78,14 +85,7 @@ pub fn detect_encoding_with_suggestion<R: Read>(
             .take(one_char_buf.len() as u64)
             .read_exact(&mut one_char_buf)?;
         prebuf.extend(&one_char_buf);
-        let next_char = temp_decoder
-            .decode(&one_char_buf, encoding::DecoderTrap::Strict)
-            .map_err(|desc| {
-                io::Error::new(
-                    io::ErrorKind::Other,
-                    format!("Input decoding error: {}", desc),
-                )
-            })?;
+        let next_char = decoder_helper(&mut temp_decoder, &one_char_buf)?;
         xml_decl.push_str(&next_char);
         // we don't have a full state machine here to detect if we're running through valid
         // xml_decl data, so we're just going to put a hard upper cap at 256 chars - if we've
@@ -116,7 +116,7 @@ pub fn detect_encoding_with_suggestion<R: Read>(
                 "Improperly formatted encodingdecl: unquoted value.",
             )
         })?;
-        let encoding_name = encoding_val_iter
+        let encoding_name: String = encoding_val_iter
             .take_while(|c| c != &starting_quote)
             .collect::<String>();
 
@@ -225,8 +225,8 @@ impl Encoding {
     }
 
     pub fn new_from_name(name: &str, is_definitive: bool) -> io::Result<Self> {
-        if let Some(decoder) = encoding::label::encoding_from_whatwg_label(name) {
-            match decoder.name().to_lowercase().as_str() {
+        if let Some(encoding) = encoding_rs::Encoding::for_label_no_replacement(name.as_bytes()) {
+            match encoding.name().to_lowercase().as_str() {
                 "ascii" => Ok(Encoding::Ascii(is_definitive)),
                 "utf-8" => Ok(Encoding::Utf8(is_definitive)),
                 "utf-16le" => Ok(Encoding::Utf16Le(is_definitive)),
@@ -244,13 +244,14 @@ impl Encoding {
         }
     }
 
-    pub fn get_decoder(&self) -> io::Result<EncodingRef> {
-        encoding::label::encoding_from_whatwg_label(&self.get_name()).ok_or_else(|| {
-            io::Error::new(
-                io::ErrorKind::Other,
-                format!("Unrecognized input encoding name: {}", self.get_name()),
-            )
-        })
+    pub fn get_decoder(&self) -> io::Result<encoding_rs::Decoder> {
+        encoding_rs::Encoding::for_label_no_replacement(&self.get_name().as_bytes())
+            .ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::Other,
+                    format!("Unrecognized input encoding name: {}", self.get_name()),
+                )
+            }).map(|enc| enc.new_decoder_without_bom_handling())
     }
 
     pub fn get_name(&self) -> String {
@@ -299,16 +300,17 @@ impl Encoding {
     }
 
     pub fn encoding_decl_is_compatible(&self, encoding_decl_name: &str) -> io::Result<bool> {
-        let other_decoder = encoding::label::encoding_from_whatwg_label(encoding_decl_name)
-            .ok_or_else(|| {
-                io::Error::new(
-                    io::ErrorKind::Other,
-                    format!("Unrecognized input encoding name: {}", encoding_decl_name),
-                )
-            })?;
+        let other_decoder =
+            encoding_rs::Encoding::for_label_no_replacement(encoding_decl_name.as_bytes())
+                .ok_or_else(|| {
+                    io::Error::new(
+                        io::ErrorKind::Other,
+                        format!("Unrecognized input encoding name: {}", encoding_decl_name),
+                    )
+                })?;
 
-        let self_name = self.get_name();
-        let other_name = other_decoder.name();
+        let self_name = self.get_name().to_lowercase();
+        let other_name = other_decoder.name().to_lowercase();
 
         // This takes care of all UTF-16 cases
         if self_name == other_name {
@@ -326,9 +328,10 @@ impl Encoding {
         // interchangeable
         // Basically, the two are compatible if we're ascii or utf-8, and they're any of the
         // supported singlebyte encodings here:
-        // https://lifthrasiir.github.io/rust-encoding/src/encoding/src/all.rs.html#41-69
+        // https://docs.rs/encoding_rs/0.8.13/src/encoding_rs/lib.rs.html
+        // look for LABELS_SORTED
         if self_name == "utf-8" || self_name == "ascii" {
-            let compat = match other_name {
+            let compat = match other_name.as_str() {
                 "ascii" => true,
                 "utf-8" => true,
                 "ibm866" => true,

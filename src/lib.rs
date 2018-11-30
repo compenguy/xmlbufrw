@@ -14,8 +14,7 @@
 /// determine how to parse the xml declaration far enough to see the encoding declaration.
 ///
 /// It is an error for a document to be in a non-UTF/UCS encoding and lack an encoding declaration.
-extern crate encoding;
-use encoding::types::EncodingRef;
+extern crate encoding_rs;
 
 use std::cmp;
 use std::fmt;
@@ -24,13 +23,14 @@ use std::io::BufRead;
 use std::io::Read;
 
 mod enc_detect;
+use enc_detect::decoder_helper;
 use enc_detect::detect_encoding_with_suggestion;
 
 const DEFAULT_BUF_SIZE: usize = 4096;
 
 pub struct XmlReadBuffer<R> {
     inner: R,
-    decoder: EncodingRef,
+    decoder: encoding_rs::Decoder,
     input_buf: Vec<u8>,
     output_buf: String,
     output_pos: usize,
@@ -118,15 +118,12 @@ impl<R: Read> BufRead for XmlReadBuffer<R> {
             debug_assert!(self.output_pos == self.output_buf.len());
             self.fill_input_buf()?;
             // Take raw encoded data and convert it to utf-8
-            let tmp_buf = self
-                .decoder
-                .decode(&self.input_buf, encoding::DecoderTrap::Strict)
-                .map_err(|desc| {
-                    io::Error::new(
-                        io::ErrorKind::Other,
-                        format!("Input decoding error: {}", desc),
-                    )
-                })?;
+            let tmp_buf = decoder_helper(&mut self.decoder, &self.input_buf).map_err(|desc| {
+                io::Error::new(
+                    io::ErrorKind::Other,
+                    format!("Input decoding error: {}", desc),
+                )
+            })?;
             let mut seen_cr = false;
             // We do the more comprehensive xml 1.1 end-of-line handling rather than the sparser
             // xml 1.0 end-of-line, since it should be effective for both situations.
